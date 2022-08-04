@@ -1,0 +1,334 @@
+import re
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+from scipy import stats
+from scipy.stats import norm
+%matplotlib inline
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+
+data_as_frame = pd.read_csv("input/2015_Air_quality.csv")
+
+data_as_frame.info()
+
+data_as_frame.head(10)
+
+data_as_frame.tail()
+
+data_as_frame.shape
+
+data_as_frame.describe()
+
+data_as_frame.columns
+
+data_as_frame.isnull().values.any()
+
+data_as_frame.isna().values.any()
+
+data_as_frame.isna().sum()
+
+len(data_as_frame)
+
+na_per = (data_as_frame.isna().sum() / len(data_as_frame)).sort_values(ascending=False)
+na_per
+
+plt.figure(figsize=(20,5))
+plt.title('The NA ratio in each column')
+plt.xticks(rotation='vertical')
+plt.plot([0,22],[0.5,0.5],'g:')
+plt.plot(na_per.index,na_per.values,'-',label=r'$NA \ ratio = \frac{counts \ of \ NA}{Total \ row \ of \ NA}$')
+plt.xlim(0,22)
+_ = plt.legend(fontsize='x-large')
+
+data_as_frame['UVB'].value_counts()
+
+data_as_frame.drop(['UVB','RAIN_COND','PH_RAIN'],axis=1,inplace=True)
+
+data_as_frame.info()
+
+data_as_frame.nunique() 
+
+data_as_frame.head()
+
+data_as_frame['station'].head()
+
+data = data_as_frame.station.unique()
+data_new = np.arange(len(data_as_frame.station.unique()))
+data_new
+
+len(data_new)
+
+data_as_frame.station.replace(data, data_new, inplace=True)
+
+data_as_frame.head()
+
+data_as_frame.info()
+
+data_as_frame[data_as_frame['CO'].isna()].head()
+
+### display na count row-wise.
+data_as_frame.isna().sum(axis=1).value_counts().sort_index()
+
+plt.figure(figsize=(20,5))
+plt.subplot(1,2,1)
+plt.title('NA counts in each row')
+plt.plot(data_as_frame.isna().sum(axis=1).value_counts().sort_index())
+plt.xlabel('Number of NA in each row')
+plt.ylabel('Counts')
+plt.xlim(0)
+plt.ylim(0)
+
+plt.subplot(1,2,2)
+plt.title('Accumulated NA counts in each row')
+plt.plot(data_as_frame.isna().sum(axis=1).value_counts().sort_index().cumsum())
+plt.xlabel('Accumulated Number of NA in each row')
+plt.ylabel('Accumulated Counts')
+plt.xlim(0)
+_= plt.ylim(0)
+
+data_as_frame = data_as_frame.dropna(thresh=17)
+
+def numeric(row):
+    try:
+        if np.isnan(row):
+            return
+        else:
+            row =str(row)
+            return float(row.replace('x','').replace('#','').replace('*',''))
+    except TypeError:
+        row =str(row)
+        return float(row.replace('x','').replace('#','').replace('*',''))
+
+data_as_frame['WS_HR'] = data_as_frame['WS_HR'].apply(numeric)
+print(data_as_frame['WS_HR'].describe())
+print('\nThe skewness:',data_as_frame['WS_HR'].skew())
+print('Right skewed') if data_as_frame['WS_HR'].skew()>0 else print('Left skewed')
+
+data_as_frame['WS_HR'].fillna(value=data_as_frame['WS_HR'].median(),inplace=True)
+
+# column list
+col_list = ['NO2','NO','NOx','PM10','CO','O3','AMB_TEMP','SO2','WD_HR','RH','WIND_DIREC', 'WIND_SPEED','PM2.5']
+
+for col in col_list:
+    data_as_frame[col]=data_as_frame[col].apply(numeric)
+    data_as_frame[col].fillna(value=data_as_frame[col].median(),inplace=True)
+
+data_as_frame['RAINFALL'] = data_as_frame['RAINFALL'].apply(lambda x:0 if x=='NR' else x).apply(numeric)
+
+data_as_frame.isna().sum().sort_values(ascending=False)
+
+# finally drop these columns
+data_as_frame.drop(['CH4','NMHC','THC'],axis=1,inplace=True)
+
+data_as_frame['year'] = pd.to_datetime(data_as_frame['time']).dt.year
+data_as_frame['month'] = pd.to_datetime(data_as_frame['time']).dt.month
+data_as_frame['day'] = pd.to_datetime(data_as_frame['time']).dt.day
+data_as_frame['hour'] = pd.to_datetime(data_as_frame['time']).dt.hour
+data_as_frame.drop('time',axis=1,inplace=True)
+
+data_as_frame.tail()
+
+plt.figure(figsize=(20,5))
+plt.subplot(1,3,1)
+plt.title('AVG. PM2.5 in each month')
+plt.plot(data_as_frame.groupby('month').mean()['PM2.5'])
+plt.xlim(1,12)
+plt.xlabel('month')
+plt.ylabel('PM2.5')
+
+plt.subplot(1,3,2)
+plt.title('AVG. PM2.5 in each hour')
+plt.plot(data_as_frame.groupby('hour').mean()['PM2.5'])
+plt.xlim(0,23)
+plt.xlabel('hour')
+plt.ylabel('PM2.5')
+
+plt.subplot(1,3,3)
+plt.title('AVG. PM2.5 in each station')
+plt.bar(data_as_frame.groupby('station').mean().index,data_as_frame.groupby('station').mean()['PM2.5'])
+plt.xticks(rotation='vertical')
+plt.xlabel('station')
+_=plt.ylabel('PM2.5')
+
+continous_columns=['AMB_TEMP', 'CO', 'NO', 'NO2', 'NOx', 'O3', 'PM10', 'PM2.5', 'RAINFALL','RH', 'SO2', 'WD_HR', 'WIND_DIREC', 'WIND_SPEED', 'WS_HR']
+discrete_columns=['station','year','month','day','hour']
+
+plt.figure(figsize=(20,20))
+hm=sns.heatmap(data_as_frame[continous_columns].corr().values,annot=True,
+               xticklabels=continous_columns,
+               yticklabels=continous_columns,
+               cmap='YlGnBu')
+
+abs(data_as_frame[continous_columns].corr()['PM2.5']).sort_values(ascending=False)
+
+data_as_frame.head()
+
+data_as_frame = data_as_frame.drop(['station','year','month','day','hour' ], axis=1)
+
+data_as_frame.describe()
+
+data_as_frame.info()
+
+df_air = data_as_frame[0:125000]
+
+df_air.columns
+
+df_air.isna().sum()
+
+df_air.to_csv('output/air_data.csv',index=False)
+
+# Data Cleaning and Feature Engineering completed
+
+data = df_air[['CO', 'NO', 'NO2', 'NOx', 'O3', 'PM10', 'PM2.5', 'SO2']]
+data.head(10)
+
+temp_data = df_air.drop(columns=['CO', 'NO', 'NO2', 'NOx', 'O3', 'PM10', 'PM2.5', 'SO2'],axis=1)
+temp_data.head()
+
+plt.figure(figsize=(20,10), dpi=80)
+image = plt.imread('image/aqi.png')
+plt.axis('off')
+plt.imshow(image)
+plt.show()
+
+data['AQI']= data.max(axis=1)
+data.head()
+
+aqi = data['AQI']
+
+plt.figure(figsize=(12,5), dpi=80)
+image = plt.imread('image/significance.png')
+plt.axis('off')
+plt.imshow(image)
+plt.show()
+
+plt.figure(figsize=(12,5), dpi=60)
+image = plt.imread('image/table.png')
+plt.axis('off')
+plt.imshow(image)
+plt.show()
+
+aqi[(aqi > 0) & (aqi <= 50)] = 0
+aqi[(aqi > 50) & (aqi <= 100)] = 1
+aqi[(aqi > 100) & (aqi <= 150)] = 2
+aqi[(aqi > 150) & (aqi <= 200)] = 3
+aqi[(aqi > 200) & (aqi <= 300)] = 4
+aqi[(aqi > 300)] = 5
+
+print(aqi.unique())
+
+data['CLASS'] = data['AQI'].astype('int8')
+data.drop(columns=['AQI'], axis= 1, inplace=True)
+data.head(10)
+
+temp_data.head()
+
+data = temp_data.join(data)
+data.head(10)
+
+# save the labeled data
+data.to_csv('output/labeled_data.csv',index=False)
+
+data.groupby('CLASS').describe()
+
+x = data.drop('CLASS',axis =1)
+y = data['CLASS']
+
+from sklearn.model_selection import train_test_split
+
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size = 0.3, random_state=42)
+
+#print the shape of the data
+print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
+
+y_train = y_train.to_frame()
+y_test = y_test.to_frame()
+
+#print the shape of the data
+print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
+
+x_train.head()
+
+train_data = pd.concat([x_train, y_train], axis=1, join='inner')
+test_data = pd.concat([x_test, y_test], axis=1, join='inner')
+
+train_data.to_csv('output/train.csv',index_label='Index')
+test_data.to_csv('output/test.csv',index_label='Index')
+
+-----------------------------------------------------------------------------------
+Next to be followed:
+    1. Model Construction
+    2. Model Training
+    3. Model Evaluation
+
+---------------------------------------------------------------------------------------
+
+model = RandomForestClassifier(n_estimators= 100)
+
+# train the model
+model.fit(x_train,y_train)
+
+# validate model using test-set
+y_pred = model.predict(x_test)
+
+y_pred
+
+# Class Label
+class_names = ['Good', 'Satisfactory', 'Moderately', 'Poor', 'Very-Poor', 'Severe']
+
+print(classification_report(y_test, y_pred, target_names=class_names))
+
+acc = accuracy_score(y_test, y_pred)*100
+
+print("Accuracy in percentage : %f"%acc)
+
+def plot_confusion_matrix(y_true, y_pred, classes, title=None, cmap='YlGnBu'):
+    if not title:
+        title = 'Confusion matrix'
+
+    cm = confusion_matrix(y_true, y_pred)
+    # Only use the labels that appear in the data
+    print('Confusion matrix')
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           # ... and label them with the respective list entries
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = 'd'
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], fmt),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black")
+    fig.tight_layout()
+    return ax
+
+# Plot confusion matrix
+plot_confusion_matrix(y_test, y_pred, classes=class_names,
+                      title='Confusion matrix')
+plt.show()
+
+# Done
+
+
+
